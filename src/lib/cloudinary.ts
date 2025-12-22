@@ -5,7 +5,13 @@ cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
 })
+
+// Validate configuration
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.error('Missing Cloudinary configuration. Please check your environment variables.')
+}
 
 export interface UploadResult {
     public_id: string
@@ -20,16 +26,24 @@ export async function uploadToCloudinary(
     fileName: string,
     folder: string = 'admin-panel'
 ): Promise<UploadResult> {
+    // Validate configuration
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+        throw new Error('Cloudinary configuration is missing. Please check your environment variables.')
+    }
+
     return new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
+        const uploadStream = cloudinary.uploader.upload_stream(
             {
                 resource_type: 'auto',
                 folder: folder,
-                public_id: `${Date.now()}-${fileName}`,
+                public_id: `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
+                use_filename: true,
+                unique_filename: true,
             },
             (error, result) => {
                 if (error) {
-                    reject(error)
+                    console.error('Cloudinary upload stream error:', error)
+                    reject(new Error(`Cloudinary upload failed: ${error.message}`))
                 } else if (result) {
                     resolve({
                         public_id: result.public_id,
@@ -39,10 +53,12 @@ export async function uploadToCloudinary(
                         bytes: result.bytes,
                     })
                 } else {
-                    reject(new Error('Upload failed'))
+                    reject(new Error('Upload failed - no result returned from Cloudinary'))
                 }
             }
-        ).end(file)
+        )
+        
+        uploadStream.end(file)
     })
 }
 
