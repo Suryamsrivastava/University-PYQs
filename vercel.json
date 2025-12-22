@@ -3,8 +3,13 @@
     "src/app/api/files/upload/route.ts": {
       "maxDuration": 60,
       "memory": 3008
+    },
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
     }
   },
+  "cleanUrls": true,
+  "trailingSlash": false,
   "headers": [
     {
       "source": "/api/(.*)",
