@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
 import File from '@/models/File'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
     try {
         await dbConnect()
 
-        const { searchParams } = new URL(request.url)
+        const searchParams = request.nextUrl.searchParams
         const query = searchParams.get('q') || ''
         const type = searchParams.get('type') || 'all' // all, suggestions, files
 
