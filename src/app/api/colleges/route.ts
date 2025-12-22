@@ -102,10 +102,19 @@ export async function POST(request: NextRequest) {
             website,
             establishedYear,
             type,
-            affiliation
+            affiliation,
+            isActive: true  // Set college as active by default
+        })
+
+        console.log('🏫 COLLEGE CREATE: Saving new college:', {
+            name: college.name,
+            code: college.code,
+            isActive: college.isActive
         })
 
         await college.save()
+        
+        console.log('✅ COLLEGE CREATE: College saved successfully with ID:', college._id)
 
         return NextResponse.json({
             success: true,

@@ -40,24 +40,32 @@ export default function UploadPage() {
     }, [])
 
     const fetchColleges = async () => {
+        console.log('📚 UPLOAD PAGE: Starting to fetch colleges for dropdown')
         try {
             setLoadingColleges(true)
+            console.log('🌐 UPLOAD PAGE: Making API call to /api/colleges/dropdown')
             const response = await fetch('/api/colleges/dropdown')
+            console.log('📡 UPLOAD PAGE: API response status:', response.status)
+            
             const data = await response.json()
+            console.log('📦 UPLOAD PAGE: API response data:', data)
 
             if (data.success) {
+                console.log('✅ UPLOAD PAGE: Successfully received colleges:', data.colleges.length)
+                console.log('📋 UPLOAD PAGE: Colleges list:', data.colleges)
                 setColleges(data.colleges)
             } else {
-                console.error('Failed to fetch colleges:', data.error)
+                console.error('❌ UPLOAD PAGE: Failed to fetch colleges:', data.error)
                 // Still allow manual input if API fails
                 setColleges([])
             }
         } catch (error) {
-            console.error('Error fetching colleges:', error)
+            console.error('💥 UPLOAD PAGE: Error fetching colleges:', error)
             // Still allow manual input if fetch fails
             setColleges([])
         } finally {
             setLoadingColleges(false)
+            console.log('🏁 UPLOAD PAGE: Finished fetching colleges. Final count:', colleges.length)
         }
     }
 
