@@ -59,6 +59,13 @@ export async function POST(request: NextRequest) {
         let uploadResult
         try {
             console.log(`Starting upload for file: ${fileName}, size: ${file.size} bytes`)
+            console.log('Cloudinary config check:', {
+                hasCloudName: !!process.env.CLOUDINARY_CLOUD_NAME,
+                hasApiKey: !!process.env.CLOUDINARY_API_KEY,
+                hasApiSecret: !!process.env.CLOUDINARY_API_SECRET,
+                cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'NOT SET'
+            })
+            
             uploadResult = await uploadToCloudinary(
                 buffer,
                 fileName,
@@ -67,11 +74,30 @@ export async function POST(request: NextRequest) {
             console.log('Upload successful:', uploadResult.public_id)
         } catch (cloudinaryError: any) {
             console.error('Cloudinary upload error:', cloudinaryError)
+            
+            // Return user-friendly error messages
+            let errorMessage = 'Failed to upload file to cloud storage'
+            let helpfulHint = 'Please contact support if this issue persists'
+            
+            if (cloudinaryError.message?.includes('credentials') || cloudinaryError.message?.includes('Unauthorized')) {
+                errorMessage = 'Cloud storage authentication failed'
+                helpfulHint = 'Administrator: Check CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in Vercel environment variables'
+            } else if (cloudinaryError.message?.includes('limit') || cloudinaryError.message?.includes('quota')) {
+                errorMessage = 'Cloud storage quota exceeded'
+                helpfulHint = 'Administrator: Check your Cloudinary account usage at https://cloudinary.com/console'
+            } else if (cloudinaryError.message?.includes('timeout')) {
+                errorMessage = 'Upload timeout - file may be too large'
+                helpfulHint = 'Try uploading a smaller file or check your internet connection'
+            } else if (cloudinaryError.message?.includes('invalid JSON') || cloudinaryError.message?.includes('500')) {
+                errorMessage = 'Cloud storage service error'
+                helpfulHint = 'Administrator: Verify your Cloudinary account is active and credentials are correct'
+            }
+            
             return NextResponse.json(
                 { 
-                    error: 'Failed to upload file to cloud storage',
+                    error: errorMessage,
                     details: cloudinaryError.message || 'Unknown cloudinary error',
-                    hint: 'Please check your Cloudinary credentials in environment variables'
+                    hint: helpfulHint
                 },
                 { status: 500 }
             )

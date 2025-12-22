@@ -54,62 +54,76 @@ export async function uploadToCloudinary(
         cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     })
 
-    try {
-        // Convert buffer to base64 data URI
-        const base64Data = file.toString('base64')
-        const mimeType = getMimeType(fileName)
-        const dataURI = `data:${mimeType};base64,${base64Data}`
-        
-        console.log('Uploading to Cloudinary with data URI method...')
-        
-        // Upload using data URI (most reliable for serverless)
-        const result = await cloudinary.uploader.upload(dataURI, {
-            resource_type: 'auto',
-            folder: folder,
-            public_id: `${Date.now()}-${sanitizeFileName(fileName)}`,
-            use_filename: false,
-            unique_filename: true,
-            overwrite: false,
-        })
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                resource_type: 'auto',
+                folder: folder,
+                public_id: `${Date.now()}-${sanitizeFileName(fileName)}`,
+                use_filename: false,
+                unique_filename: true,
+                overwrite: false,
+                timeout: 60000, // 60 second timeout
+            },
+            (error, result) => {
+                if (error) {
+                    console.error('Cloudinary upload stream error:', {
+                        message: error.message,
+                        error: error.error,
+                        http_code: error.http_code,
+                        name: error.name,
+                    })
+                    
+                    // Check for specific error types
+                    if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+                        reject(new Error('Invalid Cloudinary credentials. Verify CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Vercel environment variables.'))
+                        return
+                    }
+                    
+                    if (error.http_code === 500 || error.message?.includes('500')) {
+                        reject(new Error('Cloudinary server error (500). Possible causes: 1) Account limits reached 2) Invalid credentials 3) Service issue. Check your Cloudinary dashboard at https://cloudinary.com/console'))
+                        return
+                    }
+                    
+                    if (error.message?.includes('invalid JSON') || error.message?.includes('not valid JSON')) {
+                        reject(new Error('Cloudinary API returned invalid response (HTML instead of JSON). This usually means: 1) Invalid API credentials 2) Account suspended/expired 3) Incorrect cloud_name. Verify your Cloudinary account status.'))
+                        return
+                    }
 
-        console.log('✓ Upload successful:', {
-            public_id: result.public_id,
-            secure_url: result.secure_url,
-            format: result.format,
-            bytes: result.bytes
-        })
+                    if (error.message?.includes('timeout')) {
+                        reject(new Error('Upload timeout. The file may be too large or network is slow.'))
+                        return
+                    }
+                    
+                    reject(new Error(`Cloudinary upload failed: ${error.message || 'Unknown error'}`))
+                    return
+                }
+                
+                if (!result) {
+                    reject(new Error('No result received from Cloudinary'))
+                    return
+                }
 
-        return {
-            public_id: result.public_id,
-            secure_url: result.secure_url,
-            resource_type: result.resource_type,
-            format: result.format,
-            bytes: result.bytes,
-        }
-    } catch (error: any) {
-        console.error('✗ Cloudinary upload error:', {
-            message: error.message,
-            error: error.error,
-            http_code: error.http_code,
-            name: error.name,
-            stack: error.stack?.split('\n').slice(0, 3)
-        })
-        
-        // Check for specific error types
-        if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-            throw new Error('Invalid Cloudinary credentials. Verify CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Vercel environment variables.')
-        } 
-        
-        if (error.http_code === 500 || error.message?.includes('500')) {
-            throw new Error('Cloudinary server error. Your account may have reached its limit or there is a service issue. Check your Cloudinary dashboard.')
-        }
-        
-        if (error.message?.includes('invalid JSON')) {
-            throw new Error('Cloudinary API returned invalid response. Check if your account is active and credentials are correct.')
-        }
-        
-        throw new Error(`Upload failed: ${error.message || 'Unknown error'}`)
-    }
+                console.log('✓ Upload successful:', {
+                    public_id: result.public_id,
+                    secure_url: result.secure_url,
+                    format: result.format,
+                    bytes: result.bytes
+                })
+
+                resolve({
+                    public_id: result.public_id,
+                    secure_url: result.secure_url,
+                    resource_type: result.resource_type,
+                    format: result.format,
+                    bytes: result.bytes,
+                })
+            }
+        )
+
+        // Write buffer to stream
+        uploadStream.end(file)
+    })
 }
 
 // Helper function to get MIME type from filename
