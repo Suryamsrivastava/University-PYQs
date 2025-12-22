@@ -1,22 +1,29 @@
 import { v2 as cloudinary } from 'cloudinary'
 
-// Configure Cloudinary with timeout settings
-const cloudinaryConfig = {
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true,
-    // Add timeout and retry settings
-    timeout: 120000, // 120 seconds
+// Configure Cloudinary explicitly for each request
+export function getCloudinaryConfig() {
+    const config = {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+        secure: true,
+    }
+
+    // Validate configuration
+    if (!config.cloud_name || !config.api_key || !config.api_secret) {
+        console.error('Missing Cloudinary configuration:', {
+            cloud_name: !!config.cloud_name,
+            api_key: !!config.api_key,
+            api_secret: !!config.api_secret,
+        })
+        throw new Error('Cloudinary configuration is incomplete. Check environment variables.')
+    }
+
+    return config
 }
 
-cloudinary.config(cloudinaryConfig)
-
-// Validate configuration
-if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-    console.error('Missing Cloudinary configuration. Please check your environment variables.')
-    console.error('Required: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET')
-}
+// Configure Cloudinary
+cloudinary.config(getCloudinaryConfig())
 
 export interface UploadResult {
     public_id: string
@@ -31,35 +38,46 @@ export async function uploadToCloudinary(
     fileName: string,
     folder: string = 'admin-panel'
 ): Promise<UploadResult> {
-    // Validate configuration
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-        throw new Error('Cloudinary configuration is missing. Please check your environment variables.')
+    // Reconfigure for this request (important for serverless)
+    try {
+        const config = getCloudinaryConfig()
+        cloudinary.config(config)
+    } catch (configError: any) {
+        console.error('Configuration error:', configError.message)
+        throw configError
     }
 
-    // Log configuration (without sensitive data)
-    console.log('Cloudinary Config:', {
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key_present: !!process.env.CLOUDINARY_API_KEY,
-        api_secret_present: !!process.env.CLOUDINARY_API_SECRET,
-        file_size: file.length,
-        folder: folder
+    console.log('Starting upload:', {
+        fileName,
+        fileSize: file.length,
+        folder,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     })
 
-    // Try data URI upload method as fallback (more reliable on serverless)
     try {
+        // Convert buffer to base64 data URI
         const base64Data = file.toString('base64')
-        const dataURI = `data:application/octet-stream;base64,${base64Data}`
+        const mimeType = getMimeType(fileName)
+        const dataURI = `data:${mimeType};base64,${base64Data}`
         
+        console.log('Uploading to Cloudinary with data URI method...')
+        
+        // Upload using data URI (most reliable for serverless)
         const result = await cloudinary.uploader.upload(dataURI, {
             resource_type: 'auto',
             folder: folder,
-            public_id: `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
-            use_filename: true,
+            public_id: `${Date.now()}-${sanitizeFileName(fileName)}`,
+            use_filename: false,
             unique_filename: true,
-            timeout: 120000,
+            overwrite: false,
         })
 
-        console.log('Upload successful:', result.public_id)
+        console.log('✓ Upload successful:', {
+            public_id: result.public_id,
+            secure_url: result.secure_url,
+            format: result.format,
+            bytes: result.bytes
+        })
 
         return {
             public_id: result.public_id,
@@ -69,22 +87,50 @@ export async function uploadToCloudinary(
             bytes: result.bytes,
         }
     } catch (error: any) {
-        console.error('Cloudinary upload error:', {
+        console.error('✗ Cloudinary upload error:', {
             message: error.message,
             error: error.error,
             http_code: error.http_code,
-            name: error.name
+            name: error.name,
+            stack: error.stack?.split('\n').slice(0, 3)
         })
         
-        // Provide more specific error message
-        if (error.http_code === 401 || error.message?.includes('401')) {
-            throw new Error('Invalid Cloudinary credentials. Please check your API key and secret.')
-        } else if (error.http_code === 500 || error.message?.includes('500')) {
-            throw new Error('Cloudinary server error. Please try again or check your account status.')
-        } else {
-            throw new Error(`Cloudinary upload failed: ${error.message || 'Unknown error'}`)
+        // Check for specific error types
+        if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+            throw new Error('Invalid Cloudinary credentials. Verify CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Vercel environment variables.')
+        } 
+        
+        if (error.http_code === 500 || error.message?.includes('500')) {
+            throw new Error('Cloudinary server error. Your account may have reached its limit or there is a service issue. Check your Cloudinary dashboard.')
         }
+        
+        if (error.message?.includes('invalid JSON')) {
+            throw new Error('Cloudinary API returned invalid response. Check if your account is active and credentials are correct.')
+        }
+        
+        throw new Error(`Upload failed: ${error.message || 'Unknown error'}`)
     }
+}
+
+// Helper function to get MIME type from filename
+function getMimeType(fileName: string): string {
+    const ext = fileName.toLowerCase().split('.').pop()
+    const mimeTypes: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }
+    return mimeTypes[ext || ''] || 'application/octet-stream'
+}
+
+// Helper function to sanitize filename
+function sanitizeFileName(fileName: string): string {
+    return fileName
+        .replace(/[^a-zA-Z0-9.-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .substring(0, 100)
 }
 
 export async function deleteFromCloudinary(publicId: string): Promise<void> {
