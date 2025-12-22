@@ -212,16 +212,18 @@ export async function uploadToCloudinary(
     folder: string = 'admin-panel'
 ): Promise<UploadResult> {
     // Re-configure for safety in serverless
-    cloudinary.config(getCloudinaryConfig());
+    const config = getCloudinaryConfig();
+    cloudinary.config(config);
 
     const mimeType = getMimeType(originalFileName);
     const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
-    console.log('Starting base64 upload:', {
+    console.log('📤 Starting Cloudinary upload:', {
         fileName: originalFileName,
-        size: buffer.length,
+        sizeKB: Math.round(buffer.length / 1024),
         folder,
         mimeType,
+        cloudName: config.cloud_name,
     });
 
     try {
@@ -232,9 +234,15 @@ export async function uploadToCloudinary(
             use_filename: false,
             unique_filename: true,
             overwrite: false,
+            timeout: 120000, // 2 minute timeout for large files
         });
 
-        console.log('✓ Upload success:', result.public_id);
+        console.log('✅ Upload successful:', {
+            public_id: result.public_id,
+            url: result.secure_url,
+            format: result.format,
+            sizeKB: Math.round(result.bytes / 1024)
+        });
 
         return {
             public_id: result.public_id,
@@ -244,16 +252,26 @@ export async function uploadToCloudinary(
             bytes: result.bytes,
         };
     } catch (error: any) {
-        console.error('❌ Cloudinary upload failed:', error.message || error);
+        console.error('❌ Cloudinary upload failed:', {
+            message: error.message,
+            http_code: error.http_code,
+            error: error.error,
+        });
 
-        if (error.http_code === 401) {
-            throw new Error('Cloudinary authentication failed – check API_KEY and API_SECRET');
+        if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+            throw new Error('❌ Cloudinary authentication failed. Check CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Vercel environment variables.');
         }
         if (error.http_code === 400 || error.message?.includes('cloud_name')) {
-            throw new Error('Invalid CLOUD_NAME – double-check spelling in Vercel env');
+            throw new Error('❌ Invalid CLOUDINARY_CLOUD_NAME. Verify exact spelling at https://cloudinary.com/console/settings/account');
+        }
+        if (error.http_code === 500 || error.message?.includes('500') || error.message?.includes('invalid JSON')) {
+            throw new Error('❌ Cloudinary server error (500). Usually means wrong CLOUD_NAME or account issue. Verify credentials at https://cloudinary.com/console');
+        }
+        if (error.message?.includes('timeout')) {
+            throw new Error('❌ Upload timeout. File may be too large or connection is slow.');
         }
 
-        throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
+        throw new Error(`Cloudinary upload failed: ${error.message || 'Unknown error'}`);
     }
 }
 

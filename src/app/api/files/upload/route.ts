@@ -170,11 +170,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No file provided' }, { status: 400 });
         }
 
-        // Vercel limit ~4.5MB – enforce it
-        const maxSize = 4.5 * 1024 * 1024;
+        // Vercel serverless body limit is ~4.5MB, but we can stream to Cloudinary
+        // Set reasonable limit for PDFs
+        const maxSize = 10 * 1024 * 1024; // 10MB
         if (file.size > maxSize) {
             return NextResponse.json(
-                { error: 'File too large. Max ~4.5MB on Vercel.' },
+                { error: 'File too large. Maximum size is 10MB' },
                 { status: 413 }
             );
         }
@@ -185,9 +186,18 @@ export async function POST(request: NextRequest) {
         }
 
         const fileName = file.name || 'upload.pdf';
+        
+        console.log('📤 Processing file:', {
+            name: fileName,
+            size: file.size,
+            type: file.type
+        });
+
         const buffer = Buffer.from(await file.arrayBuffer());
 
+        console.log('✓ Buffer created, uploading to Cloudinary...');
         const uploadResult = await uploadToCloudinary(buffer, fileName, `${collegeName}/${courseName}/${fileType}`);
+        console.log('✓ Cloudinary upload complete:', uploadResult.public_id);
 
         const newFile = new File({
             collegeName,
@@ -207,9 +217,33 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true, file: newFile });
     } catch (error: any) {
-        console.error('Upload route error:', error);
+        console.error('❌ Upload route error:', {
+            message: error.message,
+            name: error.name,
+            stack: error.stack?.split('\n').slice(0, 3)
+        });
+        
+        // Provide helpful error messages
+        let errorMsg = 'Failed to upload file';
+        let hint = 'Please try again';
+        
+        if (error.message?.includes('Cloudinary')) {
+            errorMsg = 'Cloud storage error';
+            hint = 'Check Cloudinary credentials in Vercel environment variables';
+        } else if (error.message?.includes('timeout')) {
+            errorMsg = 'Upload timeout';
+            hint = 'File may be too large or connection is slow';
+        } else if (error.message?.includes('formData') || error.message?.includes('parse')) {
+            errorMsg = 'Invalid file format';
+            hint = 'Make sure you are uploading a valid PDF file';
+        }
+        
         return NextResponse.json(
-            { error: 'Failed to upload file', details: error.message },
+            { 
+                error: errorMsg,
+                details: error.message || 'Unknown error',
+                hint
+            },
             { status: 500 }
         );
     }
