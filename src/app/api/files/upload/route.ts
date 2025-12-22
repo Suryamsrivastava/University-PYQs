@@ -5,6 +5,15 @@ import { uploadToCloudinary } from '@/lib/cloudinary'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Max duration in seconds
+export const runtime = 'nodejs' // Use Node.js runtime for better compatibility
+
+// Disable Next.js body parsing to handle large files
+export const config = {
+    api: {
+        bodyParser: false,
+        responseLimit: false,
+    },
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -24,6 +33,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No file provided' }, { status: 400 })
         }
 
+        // Check file size (50MB limit for Vercel)
+        const maxSize = 50 * 1024 * 1024 // 50MB
+        if (file.size > maxSize) {
+            return NextResponse.json(
+                { error: 'File too large. Maximum size is 50MB' },
+                { status: 413 }
+            )
+        }
+
         // Validate required fields
         const requiredFields = [collegeName, courseName, year, branch, fileType, semester, paperType]
         if (requiredFields.some(field => !field)) {
@@ -40,17 +58,20 @@ export async function POST(request: NextRequest) {
         // Upload to Cloudinary with error handling
         let uploadResult
         try {
+            console.log(`Starting upload for file: ${fileName}, size: ${file.size} bytes`)
             uploadResult = await uploadToCloudinary(
                 buffer,
                 fileName,
                 `${collegeName}/${courseName}/${fileType}`
             )
+            console.log('Upload successful:', uploadResult.public_id)
         } catch (cloudinaryError: any) {
             console.error('Cloudinary upload error:', cloudinaryError)
             return NextResponse.json(
                 { 
                     error: 'Failed to upload file to cloud storage',
-                    details: cloudinaryError.message || 'Unknown cloudinary error'
+                    details: cloudinaryError.message || 'Unknown cloudinary error',
+                    hint: 'Please check your Cloudinary credentials in environment variables'
                 },
                 { status: 500 }
             )
