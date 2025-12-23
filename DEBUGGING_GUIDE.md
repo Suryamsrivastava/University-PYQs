@@ -1,6 +1,7 @@
 # 🔍 DEBUGGING GUIDE - Vercel Deployment Issues
 
 ## Current Issues
+
 1. ❌ File uploads failing on Vercel (works locally)
 2. ❌ College dropdown not showing institutions
 
@@ -25,6 +26,7 @@ https://your-app.vercel.app/api/test-env
 ```
 
 ### ✅ Expected (Good):
+
 ```json
 {
   "success": true,
@@ -40,6 +42,7 @@ https://your-app.vercel.app/api/test-env
 ```
 
 ### ❌ If Variables Missing:
+
 ```json
 {
   "success": false,
@@ -64,6 +67,7 @@ https://your-app.vercel.app/api/test-env
 #### 🔍 What to Look For:
 
 **A. Environment Variables Check:**
+
 ```
 🔍 CLOUDINARY ENV VARS CHECK:
   CLOUDINARY_CLOUD_NAME: "your-cloud-name"
@@ -72,6 +76,7 @@ https://your-app.vercel.app/api/test-env
 ```
 
 **B. File Processing:**
+
 ```
 📄 File details:
   Original name: test.pdf
@@ -80,6 +85,7 @@ https://your-app.vercel.app/api/test-env
 ```
 
 **C. Cloudinary API Call:**
+
 ```
 🌐 Cloudinary API Details:
   Endpoint: https://api.cloudinary.com/v1_1/YOUR-CLOUD-NAME/raw/upload
@@ -88,6 +94,7 @@ https://your-app.vercel.app/api/test-env
 
 **D. The Error:**
 Look for the exact error message. It will show:
+
 - `❌ WRONG CLOUDINARY_CLOUD_NAME` - Cloud name doesn't exist
 - `❌ Authentication failed` - Wrong API key/secret
 - `❌ Account suspended` - Account issue
@@ -109,10 +116,12 @@ Look for the exact error message. It will show:
 ```
 
 **If colleges = 0:**
+
 - No colleges added to database yet
 - Go to `/dashboard/institutions` and add colleges
 
 **If colleges > 0 but dropdown empty:**
+
 - Check browser console for JavaScript errors
 - Check if `SearchableDropdown` component is working
 
@@ -121,8 +130,10 @@ Look for the exact error message. It will show:
 ## 🐛 Common Issues & Solutions
 
 ### Issue 1: "CLOUDINARY_CLOUD_NAME: ❌ NOT SET"
+
 **Problem:** Environment variable not set in Vercel
 **Solution:**
+
 1. Go to: Vercel → Your Project → Settings → Environment Variables
 2. Click "Add New"
 3. Name: `CLOUDINARY_CLOUD_NAME`
@@ -132,16 +143,20 @@ Look for the exact error message. It will show:
 7. Click **"Redeploy"** button
 
 ### Issue 2: "WRONG CLOUDINARY_CLOUD_NAME"
+
 **Problem:** Cloud name is incorrect (doesn't exist on Cloudinary)
 **Solution:**
+
 1. Go to: https://cloudinary.com/console
 2. Look at **top-left corner** - that's your exact cloud name
 3. It's **case-sensitive** and must match exactly
 4. Update in Vercel → Redeploy
 
 ### Issue 3: "Authentication failed"
+
 **Problem:** API_KEY or API_SECRET is wrong
 **Solution:**
+
 1. Go to: https://cloudinary.com/console/settings/security
 2. Copy the **exact** API Key and API Secret
 3. Update in Vercel:
@@ -150,8 +165,10 @@ Look for the exact error message. It will show:
 4. Redeploy
 
 ### Issue 4: Dropdown shows 0 colleges
+
 **Problem:** No colleges in database
 **Solution:**
+
 1. Go to: `https://your-app.vercel.app/dashboard/institutions`
 2. Add at least one college
 3. Make sure to check "Active" checkbox
@@ -159,8 +176,10 @@ Look for the exact error message. It will show:
 5. Refresh the upload page
 
 ### Issue 5: Works locally but not on Vercel
+
 **Problem:** Local uses `.env.local`, Vercel uses dashboard variables
 **Solution:**
+
 - These are **separate** - you must set both!
 - Local: `.env.local` file in your project
 - Vercel: Dashboard → Settings → Environment Variables
@@ -173,6 +192,7 @@ Look for the exact error message. It will show:
 After deploying the updated code, the logs will be VERY detailed:
 
 ### Success Flow:
+
 ```
 ========================================
 📥 UPLOAD API CALLED
@@ -208,6 +228,7 @@ After deploying the updated code, the logs will be VERY detailed:
 ```
 
 ### Error Flow:
+
 ```
 ❌❌❌ CLOUDINARY UPLOAD FAILED! ❌❌❌
 ┌─────────────────────────────────────
@@ -231,6 +252,7 @@ This means ONE of these problems:
 ## ✅ Quick Checklist
 
 Before testing:
+
 - [ ] Deployed updated code with logging
 - [ ] All 4 env vars set in Vercel (Production)
 - [ ] Clicked "Redeploy" after setting variables
