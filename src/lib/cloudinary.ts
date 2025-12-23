@@ -182,16 +182,26 @@ function getCloudinaryConfig() {
     const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
     const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
 
+    // DETAILED logging for debugging
+    console.log('🔍 VERCEL ENV CHECK:', {
+        CLOUDINARY_CLOUD_NAME: cloudName || '⚠️ NOT SET IN VERCEL',
+        CLOUDINARY_API_KEY: apiKey ? `${apiKey.substring(0, 6)}***${apiKey.slice(-4)}` : '⚠️ NOT SET IN VERCEL',
+        CLOUDINARY_API_SECRET: apiSecret ? `${apiSecret.substring(0, 4)}***${apiSecret.slice(-4)}` : '⚠️ NOT SET IN VERCEL',
+        allEnvKeys: Object.keys(process.env).filter(k => k.includes('CLOUDINARY')),
+    });
+
     if (!cloudName || !apiKey || !apiSecret) {
-        console.error('❌ Missing Cloudinary env vars:', {
-            cloud_name: cloudName ? '✓' : '✗',
-            api_key: apiKey ? '✓' : '✗',
-            api_secret: apiSecret ? '✓' : '✗',
-        });
-        throw new Error('Cloudinary configuration incomplete. Check Vercel env vars.');
+        console.error('❌ CRITICAL: Cloudinary env vars missing in Vercel!');
+        console.error('Go to: Vercel Dashboard → Your Project → Settings → Environment Variables');
+        console.error('Add these variables to PRODUCTION environment:');
+        console.error('  - CLOUDINARY_CLOUD_NAME');
+        console.error('  - CLOUDINARY_API_KEY');
+        console.error('  - CLOUDINARY_API_SECRET');
+        console.error('Then click "Redeploy" button!');
+        throw new Error('❌ Cloudinary env vars not set in Vercel. Check deployment logs above.');
     }
 
-    console.log('✓ Cloudinary config loaded:', { cloud_name: cloudName });
+    console.log('✓ All Cloudinary env vars present');
 
     return { cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true };
 }
@@ -218,13 +228,19 @@ export async function uploadToCloudinary(
     const mimeType = getMimeType(originalFileName);
     const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
+    // Show the exact API endpoint that will be called
+    const apiUrl = `https://api.cloudinary.com/v1_1/${config.cloud_name}/raw/upload`;
     console.log('📤 Starting Cloudinary upload:', {
         fileName: originalFileName,
         sizeKB: Math.round(buffer.length / 1024),
         folder,
         mimeType,
         cloudName: config.cloud_name,
+        apiUrl: apiUrl,
+        apiKeyFirst4: config.api_key.substring(0, 4),
     });
+
+    console.log(`🌐 Will POST to: ${apiUrl}`);
 
     try {
         const result = await cloudinary.uploader.upload(base64, {
@@ -256,17 +272,33 @@ export async function uploadToCloudinary(
             message: error.message,
             http_code: error.http_code,
             error: error.error,
+            cloudNameUsed: config.cloud_name,
         });
 
+        // HTML response (500) = wrong cloud name or account issue
+        if (error.http_code === 500 || error.message?.includes('500') || error.message?.includes('invalid JSON') || error.message?.includes('<!DOCTYPE')) {
+            console.error('🚨 CLOUDINARY RETURNED HTML ERROR PAGE (not JSON)!');
+            console.error(`Cloud name used: "${config.cloud_name}"`);
+            console.error('This means ONE of these:');
+            console.error('  1. CLOUDINARY_CLOUD_NAME is WRONG (most common!)');
+            console.error('  2. Account suspended/disabled');
+            console.error('  3. Wrong API credentials');
+            console.error('');
+            console.error('✅ FIX: Go to https://cloudinary.com/console/settings/account');
+            console.error('    Copy the EXACT "Cloud name" and update in Vercel');
+            console.error('    Then REDEPLOY!');
+            throw new Error(`❌ WRONG CLOUDINARY_CLOUD_NAME: "${config.cloud_name}" - Check https://cloudinary.com/console/settings/account for the correct name (case-sensitive!)`);
+        }
+        
         if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-            throw new Error('❌ Cloudinary authentication failed. Check CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in Vercel environment variables.');
+            console.error('🔑 Authentication failed - API_KEY or API_SECRET is wrong');
+            throw new Error('❌ Invalid CLOUDINARY_API_KEY or CLOUDINARY_API_SECRET. Get correct values from https://cloudinary.com/console/settings/security');
         }
+        
         if (error.http_code === 400 || error.message?.includes('cloud_name')) {
-            throw new Error('❌ Invalid CLOUDINARY_CLOUD_NAME. Verify exact spelling at https://cloudinary.com/console/settings/account');
+            throw new Error(`❌ Invalid cloud_name: "${config.cloud_name}". Verify exact spelling at https://cloudinary.com/console/settings/account`);
         }
-        if (error.http_code === 500 || error.message?.includes('500') || error.message?.includes('invalid JSON')) {
-            throw new Error('❌ Cloudinary server error (500). Usually means wrong CLOUD_NAME or account issue. Verify credentials at https://cloudinary.com/console');
-        }
+        
         if (error.message?.includes('timeout')) {
             throw new Error('❌ Upload timeout. File may be too large or connection is slow.');
         }

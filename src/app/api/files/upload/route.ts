@@ -153,6 +153,14 @@ export const config = {
 };
 
 export async function POST(request: NextRequest) {
+    console.log('📥 Upload API called on Vercel');
+    console.log('🔍 Environment check:', {
+        hasCloudName: !!process.env.CLOUDINARY_CLOUD_NAME,
+        hasApiKey: !!process.env.CLOUDINARY_API_KEY,
+        hasApiSecret: !!process.env.CLOUDINARY_API_SECRET,
+        cloudNameValue: process.env.CLOUDINARY_CLOUD_NAME || 'NOT SET',
+    });
+    
     try {
         await dbConnect();
 
