@@ -141,16 +141,13 @@ import dbConnect from '@/lib/mongodb';
 import File from '@/models/File';
 import { uploadToCloudinary } from '@/lib/cloudinary';
 
+// Route segment config for App Router
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 export const runtime = 'nodejs';
 
-export const config = {
-    api: {
-        bodyParser: false,
-        responseLimit: false,
-    },
-};
+// Note: bodyParser config is not needed in App Router
+// Next.js 14+ handles formData() automatically
 
 export async function POST(request: NextRequest) {
     console.log('\n\n========================================');
