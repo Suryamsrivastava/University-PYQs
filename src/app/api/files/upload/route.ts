@@ -153,18 +153,27 @@ export const config = {
 };
 
 export async function POST(request: NextRequest) {
-    console.log('📥 Upload API called on Vercel');
-    console.log('🔍 Environment check:', {
-        hasCloudName: !!process.env.CLOUDINARY_CLOUD_NAME,
-        hasApiKey: !!process.env.CLOUDINARY_API_KEY,
-        hasApiSecret: !!process.env.CLOUDINARY_API_SECRET,
-        cloudNameValue: process.env.CLOUDINARY_CLOUD_NAME || 'NOT SET',
-    });
+    console.log('\n\n========================================');
+    console.log('📥 UPLOAD API CALLED');
+    console.log('========================================');
+    console.log('⏰ Timestamp:', new Date().toISOString());
+    console.log('🌍 Environment:', process.env.VERCEL_ENV || 'local');
+    console.log('\n🔍 CLOUDINARY ENV VARS CHECK:');
+    console.log('  CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME ? `"${process.env.CLOUDINARY_CLOUD_NAME}"` : '❌ NOT SET');
+    console.log('  CLOUDINARY_API_KEY:', process.env.CLOUDINARY_API_KEY ? `${process.env.CLOUDINARY_API_KEY.substring(0, 8)}***` : '❌ NOT SET');
+    console.log('  CLOUDINARY_API_SECRET:', process.env.CLOUDINARY_API_SECRET ? `${process.env.CLOUDINARY_API_SECRET.substring(0, 4)}***` : '❌ NOT SET');
+    console.log('\n🔍 MONGODB ENV VAR CHECK:');
+    console.log('  MONGODB_URI:', process.env.MONGODB_URI ? 'SET ✓' : '❌ NOT SET');
+    console.log('========================================\n');
     
     try {
+        console.log('🔗 Step 1: Connecting to MongoDB...');
         await dbConnect();
+        console.log('✅ MongoDB connected successfully');
 
+        console.log('\n📋 Step 2: Parsing form data...');
         const formData = await request.formData();
+        console.log('✅ Form data parsed');
         const file = formData.get('file') as File | null;
         const collegeName = formData.get('collegeName') as string;
         const courseName = formData.get('courseName') as string;
@@ -174,7 +183,18 @@ export async function POST(request: NextRequest) {
         const semester = formData.get('semester') as string;
         const paperType = formData.get('paperType') as string;
 
+        console.log('\n📝 Form Fields Received:');
+        console.log('  File:', file ? `"${file.name}" (${file.size} bytes)` : '❌ NO FILE');
+        console.log('  College:', collegeName || '❌ MISSING');
+        console.log('  Course:', courseName || '❌ MISSING');
+        console.log('  Year:', year || '❌ MISSING');
+        console.log('  Branch:', branch || '❌ MISSING');
+        console.log('  FileType:', fileType || '❌ MISSING');
+        console.log('  Semester:', semester || '❌ MISSING');
+        console.log('  PaperType:', paperType || '❌ MISSING');
+
         if (!file) {
+            console.error('❌ ERROR: No file in form data');
             return NextResponse.json({ error: 'No file provided' }, { status: 400 });
         }
 
@@ -195,18 +215,28 @@ export async function POST(request: NextRequest) {
 
         const fileName = file.name || 'upload.pdf';
         
-        console.log('📤 Processing file:', {
-            name: fileName,
-            size: file.size,
-            type: file.type
-        });
+        console.log('\n📦 Step 3: Processing file...');
+        console.log('  File name:', fileName);
+        console.log('  File size:', `${(file.size / 1024).toFixed(2)} KB`);
+        console.log('  File type:', file.type || 'unknown');
 
-        const buffer = Buffer.from(await file.arrayBuffer());
+        console.log('\n🔄 Step 4: Converting to buffer...');
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        console.log('✅ Buffer created:', buffer.length, 'bytes');
 
-        console.log('✓ Buffer created, uploading to Cloudinary...');
+        console.log('\n☁️ Step 5: Uploading to Cloudinary...');
+        console.log('  Folder:', `${collegeName}/${courseName}/${fileType}`);
+        console.log('  Cloud Name:', process.env.CLOUDINARY_CLOUD_NAME);
+        console.log('  Starting upload now...');
+        
         const uploadResult = await uploadToCloudinary(buffer, fileName, `${collegeName}/${courseName}/${fileType}`);
-        console.log('✓ Cloudinary upload complete:', uploadResult.public_id);
+        
+        console.log('\n✅ Step 6: Cloudinary upload SUCCESS!');
+        console.log('  Public ID:', uploadResult.public_id);
+        console.log('  URL:', uploadResult.secure_url);
 
+        console.log('\n💾 Step 7: Saving to database...');
         const newFile = new File({
             collegeName,
             courseName,
@@ -220,16 +250,24 @@ export async function POST(request: NextRequest) {
             semester,
             paperType,
         });
+        console.log('  File document created');
 
         await newFile.save();
+        console.log('✅ File saved to database with ID:', newFile._id);
 
+        console.log('\n🎉 SUCCESS! Upload complete');
+        console.log('========================================\n\n');
+        
         return NextResponse.json({ success: true, file: newFile });
     } catch (error: any) {
-        console.error('❌ Upload route error:', {
-            message: error.message,
-            name: error.name,
-            stack: error.stack?.split('\n').slice(0, 3)
-        });
+        console.error('\n\n========================================');
+        console.error('❌❌❌ UPLOAD FAILED ❌❌❌');
+        console.error('========================================');
+        console.error('Error Name:', error.name);
+        console.error('Error Message:', error.message);
+        console.error('\nFull Stack Trace:');
+        console.error(error.stack);
+        console.error('========================================\n');
         
         // Provide helpful error messages
         let errorMsg = 'Failed to upload file';
