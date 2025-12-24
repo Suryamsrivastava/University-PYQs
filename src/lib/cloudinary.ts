@@ -175,51 +175,20 @@
 // export { cloudinary }/
 
 import { v2 as cloudinary } from 'cloudinary';
+import { Readable } from 'stream';
 
 // Helper to validate and get config (serverless-safe)
 function getCloudinaryConfig() {
-    console.log('\n🔧 getCloudinaryConfig() called');
-    console.log('📍 Reading environment variables...');
-    
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
     const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
     const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
 
-    console.log('\n📊 Environment Variables Status:');
-    console.log('  CLOUDINARY_CLOUD_NAME:', cloudName ? `✓ "${cloudName}"` : '❌ UNDEFINED OR EMPTY');
-    console.log('  CLOUDINARY_API_KEY:', apiKey ? `✓ Starts with "${apiKey.substring(0, 6)}..." (length: ${apiKey.length})` : '❌ UNDEFINED OR EMPTY');
-    console.log('  CLOUDINARY_API_SECRET:', apiSecret ? `✓ Starts with "${apiSecret.substring(0, 4)}..." (length: ${apiSecret.length})` : '❌ UNDEFINED OR EMPTY');
-
-    // Check if any are missing
     if (!cloudName || !apiKey || !apiSecret) {
-        console.error('\n🚨🚨🚨 CRITICAL ERROR 🚨🚨🚨');
-        console.error('Cloudinary environment variables are MISSING on Vercel!');
-        console.error('\n📋 What to do:');
-        console.error('1. Go to: https://vercel.com/dashboard → Your Project → Settings → Environment Variables');
-        console.error('2. Add these THREE variables to the PRODUCTION environment:');
-        console.error('   - CLOUDINARY_CLOUD_NAME = [your cloud name]');
-        console.error('   - CLOUDINARY_API_KEY = [your api key]');
-        console.error('   - CLOUDINARY_API_SECRET = [your api secret]');
-        console.error('3. Get values from: https://cloudinary.com/console/settings/security');
-        console.error('4. After adding, click "Redeploy" button in Vercel');
-        console.error('\n🔍 Current values:');
-        console.error('   cloudName:', cloudName || '❌ NOT SET');
-        console.error('   apiKey:', apiKey ? 'SET' : '❌ NOT SET');
-        console.error('   apiSecret:', apiSecret ? 'SET' : '❌ NOT SET');
-        throw new Error('❌ Cloudinary env vars not configured in Vercel. See logs above for fix.');
+        console.error('❌ Missing Cloudinary env vars. Check Vercel dashboard.');
+        throw new Error('Cloudinary configuration incomplete');
     }
 
-    console.log('✅ All Cloudinary environment variables are present');
-
-    const config = { 
-        cloud_name: cloudName, 
-        api_key: apiKey, 
-        api_secret: apiSecret, 
-        secure: true 
-    };
-    
-    console.log('✅ Config object created successfully');
-    return config;
+    return { cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true };
 }
 
 cloudinary.config(getCloudinaryConfig());
@@ -237,124 +206,58 @@ export async function uploadToCloudinary(
     originalFileName: string,
     folder: string = 'admin-panel'
 ): Promise<UploadResult> {
-    console.log('\n┌─────────────────────────────────────');
-    console.log('│ 🚀 uploadToCloudinary() called');
-    console.log('└─────────────────────────────────────');
-    
-    // Re-configure for safety in serverless
-    console.log('\n🔄 Re-configuring Cloudinary for serverless...');
+    // Re-configure for serverless
     const config = getCloudinaryConfig();
     cloudinary.config(config);
-    console.log('✅ Cloudinary reconfigured with fresh config');
 
-    const mimeType = getMimeType(originalFileName);
-    console.log('\n📄 File details:');
-    console.log('  Original name:', originalFileName);
-    console.log('  MIME type:', mimeType);
-    console.log('  Buffer size:', buffer.length, 'bytes');
-    console.log('  Size in KB:', (buffer.length / 1024).toFixed(2));
-    console.log('  Size in MB:', (buffer.length / 1024 / 1024).toFixed(2));
+    console.log('📤 Uploading:', originalFileName, `(${Math.round(buffer.length / 1024)}KB)`);
 
-    console.log('\n🔄 Converting to base64...');
-    const base64 = `data:${mimeType};base64,${buffer.toString('base64')}`;
-    console.log('✅ Base64 conversion complete');
-    console.log('  Base64 length:', base64.length);
+    return new Promise((resolve, reject) => {
+        // Use streaming to avoid memory doubling (no base64 conversion)
+        const stream = cloudinary.uploader.upload_stream(
+            {
+                folder,
+                public_id: `${Date.now()}-${sanitizeFileName(originalFileName)}`,
+                resource_type: 'raw',
+                timeout: 120000,
+            },
+            (error, result) => {
+                if (error) {
+                    console.error('❌ Upload failed:', error.message);
+                    
+                    if (error.http_code === 500 || error.message?.includes('invalid JSON')) {
+                        reject(new Error(`Wrong CLOUDINARY_CLOUD_NAME: "${config.cloud_name}". Check https://cloudinary.com/console`));
+                        return;
+                    }
+                    if (error.http_code === 401) {
+                        reject(new Error('Invalid Cloudinary API credentials'));
+                        return;
+                    }
+                    
+                    reject(new Error(`Upload failed: ${error.message}`));
+                    return;
+                }
+                
+                if (!result) {
+                    reject(new Error('No result from Cloudinary'));
+                    return;
+                }
 
-    // Show the exact API endpoint that will be called
-    const apiUrl = `https://api.cloudinary.com/v1_1/${config.cloud_name}/raw/upload`;
-    console.log('\n🌐 Cloudinary API Details:');
-    console.log('  Endpoint:', apiUrl);
-    console.log('  Cloud Name:', config.cloud_name);
-    console.log('  API Key (first 6):', config.api_key.substring(0, 6) + '***');
-    console.log('  Folder:', folder);
-    console.log('  Resource Type: raw (for PDFs)');
+                console.log('✅ Uploaded:', result.public_id);
+                resolve({
+                    public_id: result.public_id,
+                    secure_url: result.secure_url,
+                    resource_type: result.resource_type,
+                    format: result.format,
+                    bytes: result.bytes,
+                });
+            }
+        );
 
-    console.log('\n⏳ Making upload request to Cloudinary...');
-    console.log('   (This may take a few seconds for large files)');
-
-    try {
-        const uploadOptions = {
-            folder,
-            public_id: `${Date.now()}-${sanitizeFileName(originalFileName)}`,
-            resource_type: 'raw' as const,
-            use_filename: false,
-            unique_filename: true,
-            overwrite: false,
-            timeout: 120000,
-        };
-        
-        console.log('\n📋 Upload options:', JSON.stringify(uploadOptions, null, 2));
-        
-        const result = await cloudinary.uploader.upload(base64, uploadOptions);
-
-        console.log('\n✅✅✅ CLOUDINARY UPLOAD SUCCESS! ✅✅✅');
-        console.log('📊 Upload result:');
-        console.log('  Public ID:', result.public_id);
-        console.log('  Secure URL:', result.secure_url);
-        console.log('  Format:', result.format);
-        console.log('  Size (bytes):', result.bytes);
-        console.log('  Size (KB):', Math.round(result.bytes / 1024));
-        console.log('  Resource Type:', result.resource_type);
-        console.log('└─────────────────────────────────────\n');
-
-        return {
-            public_id: result.public_id,
-            secure_url: result.secure_url,
-            resource_type: result.resource_type,
-            format: result.format,
-            bytes: result.bytes,
-        };
-    } catch (error: any) {
-        console.error('\n❌❌❌ CLOUDINARY UPLOAD FAILED! ❌❌❌');
-        console.error('┌─────────────────────────────────────');
-        console.error('│ Error Details:');
-        console.error('├─────────────────────────────────────');
-        console.error('│ Message:', error.message);
-        console.error('│ HTTP Code:', error.http_code);
-        console.error('│ Error Object:', error.error);
-        console.error('│ Name:', error.name);
-        console.error('└─────────────────────────────────────');
-        
-        console.error('\n📍 Configuration used:');
-        console.error('  Cloud Name:', config.cloud_name);
-        console.error('  API URL:', `https://api.cloudinary.com/v1_1/${config.cloud_name}/raw/upload`);
-
-        // HTML response (500) = wrong cloud name or account issue
-        if (error.http_code === 500 || error.message?.includes('500') || error.message?.includes('invalid JSON') || error.message?.includes('<!DOCTYPE')) {
-            console.error('\n🚨 DIAGNOSIS: Cloudinary returned HTML error page (not JSON)');
-            console.error('This means ONE of these problems:');
-            console.error('');
-            console.error('1. ❌ WRONG CLOUD_NAME (most likely!)');
-            console.error(`   - You used: "${config.cloud_name}"`);
-            console.error('   - This name does NOT exist on Cloudinary');
-            console.error('   ✅ FIX: Go to https://cloudinary.com/console');
-            console.error('   - Look at top-left corner for EXACT cloud name');
-            console.error('   - Update CLOUDINARY_CLOUD_NAME in Vercel (case-sensitive!)');
-            console.error('');
-            console.error('2. ❌ Account suspended/disabled');
-            console.error('   ✅ FIX: Check https://cloudinary.com/console for account status');
-            console.error('');
-            console.error('3. ❌ Wrong API credentials');
-            console.error('   ✅ FIX: Get fresh credentials from https://cloudinary.com/console/settings/security');
-            
-            throw new Error(`❌ WRONG CLOUDINARY_CLOUD_NAME: "${config.cloud_name}" does not exist. Check https://cloudinary.com/console (top-left corner) for the correct name.`);
-        }
-        
-        if (error.http_code === 401 || error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-            console.error('🔑 Authentication failed - API_KEY or API_SECRET is wrong');
-            throw new Error('❌ Invalid CLOUDINARY_API_KEY or CLOUDINARY_API_SECRET. Get correct values from https://cloudinary.com/console/settings/security');
-        }
-        
-        if (error.http_code === 400 || error.message?.includes('cloud_name')) {
-            throw new Error(`❌ Invalid cloud_name: "${config.cloud_name}". Verify exact spelling at https://cloudinary.com/console/settings/account`);
-        }
-        
-        if (error.message?.includes('timeout')) {
-            throw new Error('❌ Upload timeout. File may be too large or connection is slow.');
-        }
-
-        throw new Error(`Cloudinary upload failed: ${error.message || 'Unknown error'}`);
-    }
+        // Convert buffer to readable stream and pipe to upload
+        const readable = Readable.from(buffer);
+        readable.pipe(stream);
+    });
 }
 
 // MIME type detection
@@ -364,19 +267,13 @@ function getMimeType(fileName: string): string {
         pdf: 'application/pdf',
         doc: 'application/msword',
         docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        xls: 'application/vnd.ms-excel',
-        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        txt: 'text/plain',
     };
     return map[ext || ''] || 'application/octet-stream';
 }
 
 // Sanitize filename
 function sanitizeFileName(fileName: string): string {
-    return fileName
-        .replace(/[^a-zA-Z0-9.-]/g, '_')
-        .replace(/_{2,}/g, '_')
-        .substring(0, 100);
+    return fileName.replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 100);
 }
 
 export async function deleteFromCloudinary(publicId: string): Promise<void> {

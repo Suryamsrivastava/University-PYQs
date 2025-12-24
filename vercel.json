@@ -2,10 +2,11 @@
   "functions": {
     "src/app/api/files/upload/route.ts": {
       "maxDuration": 60,
-      "memory": 3008
+      "memory": 1024
     },
     "src/app/api/**/*.ts": {
-      "maxDuration": 30
+      "maxDuration": 10,
+      "memory": 512
     }
   },
   "cleanUrls": true,
