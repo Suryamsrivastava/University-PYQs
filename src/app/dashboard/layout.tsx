@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Settings, Bell } from 'lucide-react'
+import { signOut } from 'next-auth/react'
+import { useAuth } from '@/hooks/useAuth'
 import GlobalSearch from '@/components/GlobalSearch'
 
 export default function DashboardLayout({
@@ -10,29 +10,22 @@ export default function DashboardLayout({
 }: {
     children: React.ReactNode
 }) {
-    const router = useRouter()
-    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const { user, isLoading, isAuthenticated } = useAuth(true)
 
-    useEffect(() => {
-        const auth = localStorage.getItem('isAuthenticated')
-        if (!auth) {
-            router.push('/login')
-        } else {
-            setIsAuthenticated(true)
-        }
-    }, [router])
-
-    const handleLogout = () => {
-        localStorage.removeItem('isAuthenticated')
-        router.push('/login')
+    const handleLogout = async () => {
+        await signOut({ callbackUrl: '/login' })
     }
 
-    if (!isAuthenticated) {
+    if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="text-gray-600">Loading...</div>
             </div>
         )
+    }
+
+    if (!isAuthenticated) {
+        return null // useAuth will redirect to login
     }
 
     return (
@@ -52,6 +45,29 @@ export default function DashboardLayout({
                         </div>
 
                         <div className="flex items-center space-x-4">
+                            {/* User Info */}
+                            {user && (
+                                <div className="hidden sm:flex items-center space-x-3">
+                                    {user.image && (
+                                        <img
+                                            className="h-8 w-8 rounded-full"
+                                            src={user.image}
+                                            alt={user.name || 'User'}
+                                        />
+                                    )}
+                                    <div className="text-sm">
+                                        <div className="font-medium text-gray-700">
+                                            {user.name || user.email}
+                                        </div>
+                                        {user.role && (
+                                            <div className="text-gray-500 capitalize">
+                                                {user.role}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Mobile search icon */}
                             <button className="md:hidden p-2 text-gray-400 hover:text-gray-600">
                                 <Settings className="h-5 w-5" />
