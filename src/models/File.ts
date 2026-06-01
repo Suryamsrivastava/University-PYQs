@@ -73,6 +73,11 @@ const FileSchema: Schema = new Schema({
         type: Date,
         default: Date.now,
     },
-})
+}, { timestamps: false })
+
+FileSchema.index({ collegeName: 1, courseName: 1 })
+FileSchema.index({ year: 1, branch: 1, semester: 1 })
+FileSchema.index({ fileType: 1 })
+FileSchema.index({ uploadDate: -1 })
 
 export default mongoose.models.File || mongoose.model<IFile>('File', FileSchema)
