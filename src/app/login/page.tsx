@@ -103,7 +103,7 @@ export default function LoginPage() {
 
                     <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
                         <p className="text-sm font-semibold text-blue-900 text-center mb-2">
-                            Demo Credentials for Interviewers
+                            Demo Credentials
                         </p>
                         <div className="text-xs text-blue-800 space-y-1">
                             <p className="text-center">
